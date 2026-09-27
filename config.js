@@ -9,7 +9,7 @@ window.GG_CONFIG = {
   supabaseKey: "sb_publishable_pKLwYTaF-gnRCUJvOKzCjQ_1hR7TLq8",
 
   // ---- The address phones use to join (the QR code is built from this) ----
-  joinUrl: "https://storycontractingltd.github.io/fir-generation-game/phone.html",
+  joinUrl: "https://storycontractingltd.github.io/fir-generations-game/phone.html",
 
   // ---- Vimeo intro video ----
   vimeoId: "1230682140",

@@ -12,7 +12,7 @@ Gameshow for the FIR Culture Workshop (Session 2). Built on the same pattern as 
 | supabase/schema.sql | Run once in the Supabase SQL Editor. Adds the gg_ tables. |
 | assets/ | Images and sounds |
 
-Live address: https://storycontractingltd.github.io/fir-generation-game/
+Live address: https://storycontractingltd.github.io/fir-generations-game/
 
 ## On the day
 
