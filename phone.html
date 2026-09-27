@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Generation Game</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="config.js"></script>
+<script src="content/questions.js"></script>
+<style>
+  :root { --story-blue:#0061ad; --story-blue-dark:#004e8c; --text:#60666d; --filler:#dee0e1; --page-bg:#eef1f4; --white:#ffffff; --radius:14px; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:Arial, Helvetica, sans-serif; color:var(--text); background:var(--page-bg); display:flex; flex-direction:column; align-items:center; min-height:100vh; padding:16px 12px 32px; }
+  h1, h2, .eyebrow, .badge, .btn, .team-chip, .ot-title { font-family:'Montserrat', Arial, sans-serif; }
+  .phone { width:100%; max-width:420px; background:var(--white); border-radius:24px; box-shadow:0 18px 50px rgba(0,51,92,.18); overflow:hidden; display:flex; flex-direction:column; min-height:600px; }
+  .topbar { background:var(--story-blue); padding:16px 20px; display:flex; align-items:center; justify-content:space-between; }
+  .wordmark { font-style:italic; font-weight:700; font-size:24px; letter-spacing:.5px; color:var(--white); line-height:1; }
+  .status-dot { width:10px; height:10px; border-radius:50%; background:#9fc4e6; transition:background .3s; }
+  .status-dot.live { background:#57e08a; } .status-dot.down { background:#ffd34e; }
+  .screen { padding:22px 20px 24px; flex:1; display:flex; flex-direction:column; }
+  .eyebrow { text-transform:uppercase; letter-spacing:1.5px; font-size:12px; font-weight:600; color:var(--story-blue); margin:0 0 8px; }
+  h1 { color:var(--story-blue); font-weight:700; font-size:25px; line-height:1.15; margin:0 0 12px; }
+  h2.question { color:#2b2f33; font-weight:600; font-size:18px; line-height:1.35; margin:0 0 16px; }
+  p.helper { font-size:15px; line-height:1.5; margin:0 0 18px; }
+  .logo { display:block; width:100%; max-width:300px; margin:0 auto 16px; }
+  label.field-label { font-family:'Montserrat', Arial, sans-serif; font-weight:600; font-size:13px; color:#2b2f33; display:block; margin-bottom:8px; }
+  input[type="text"] { width:100%; padding:15px 16px; font-size:17px; font-family:Arial, sans-serif; border:2px solid var(--filler); border-radius:var(--radius); outline:none; }
+  input[type="text"]:focus { border-color:var(--story-blue); }
+  .btn { width:100%; padding:16px; font-size:17px; font-weight:600; border:none; border-radius:var(--radius); cursor:pointer; background:var(--story-blue); color:var(--white); }
+  .btn:hover { background:var(--story-blue-dark); }
+  .btn:focus-visible { outline:3px solid #ffd34e; outline-offset:2px; }
+  .btn[disabled] { background:var(--filler); color:#9aa0a6; cursor:default; }
+  .spacer { flex:1; min-height:12px; }
+  .centre { text-align:center; align-items:center; }
+  .pulse { width:60px; height:60px; border-radius:50%; background:var(--story-blue); margin:8px auto 20px; position:relative; }
+  .pulse::after { content:""; position:absolute; inset:0; border-radius:50%; border:3px solid var(--story-blue); animation:ring 1.8s ease-out infinite; }
+  @keyframes ring { 0% { transform:scale(1); opacity:.7; } 100% { transform:scale(1.9); opacity:0; } }
+  @media (prefers-reduced-motion: reduce) { .pulse::after { animation:none; } }
+  .team-chip { display:inline-block; background:#e9f1f9; color:var(--story-blue); font-weight:600; padding:7px 16px; border-radius:999px; font-size:15px; margin-bottom:16px; }
+  .options { display:flex; flex-direction:column; gap:10px; margin-bottom:14px; }
+  .option { display:flex; gap:12px; align-items:center; text-align:left; width:100%; background:var(--white); border:2px solid var(--filler); border-radius:var(--radius); padding:13px 14px; cursor:pointer; font-family:Arial, sans-serif; }
+  .option:hover { border-color:var(--story-blue); }
+  .option:focus-visible { outline:3px solid #ffd34e; outline-offset:2px; }
+  .option[disabled] { cursor:default; }
+  .option.chosen { border-color:var(--story-blue); background:#eaf2fa; }
+  .option.dimmed { opacity:.4; }
+  .badge { flex:0 0 auto; width:36px; height:36px; border-radius:50%; background:var(--story-blue); color:var(--white); font-weight:700; font-size:17px; display:flex; align-items:center; justify-content:center; }
+  .ot-title { font-weight:600; font-size:16px; color:#2b2f33; line-height:1.3; }
+  .tick { width:70px; height:70px; border-radius:50%; background:var(--story-blue); color:#fff; font-size:36px; display:flex; align-items:center; justify-content:center; margin:6px auto 18px; }
+  .chosen-card { background:#eaf2fa; border:2px solid var(--story-blue); border-radius:var(--radius); padding:14px; display:flex; gap:12px; align-items:center; text-align:left; margin:0 0 20px; width:100%; }
+  .msgline { font-size:15px; font-weight:600; margin:4px 0 0; min-height:20px; text-align:center; }
+  .msgline.err { color:#b00020; }
+  .msgline.info { color:var(--story-blue); }
+  .hide { display:none !important; }
+</style>
+</head>
+<body>
+  <div class="phone">
+    <div class="topbar">
+      <span class="wordmark">STORY</span>
+      <span class="status-dot" id="statusDot" title="Connection"></span>
+    </div>
+
+    <!-- LOADING -->
+    <div class="screen centre" id="screen-load">
+      <div class="spacer"></div>
+      <div class="pulse"></div>
+      <p class="helper">Connecting to the game...</p>
+      <div class="spacer"></div>
+    </div>
+
+    <!-- JOIN -->
+    <div class="screen hide" id="screen-join">
+      <img class="logo" id="logoImg" alt="The Generations Game">
+      <h1>Join the game</h1>
+      <p class="helper">One phone per pair. Choose a name for your pair and you're in.</p>
+      <label class="field-label" for="teamName">Pair name</label>
+      <input type="text" id="teamName" placeholder="For example, The Estimators" autocomplete="off" maxlength="40">
+      <p class="msgline err" id="joinError"></p>
+      <div class="spacer"></div>
+      <button class="btn" id="joinBtn" disabled>Join the game</button>
+    </div>
+
+    <!-- WAITING -->
+    <div class="screen centre hide" id="screen-wait">
+      <div class="spacer"></div>
+      <div class="pulse"></div>
+      <div class="team-chip" id="waitTeam">Your pair</div>
+      <p class="helper" id="waitMsg">Watch the big screen.</p>
+      <div class="spacer"></div>
+    </div>
+
+    <!-- VOTING -->
+    <div class="screen hide" id="screen-vote">
+      <p class="eyebrow" id="voteEyebrow">Question 1</p>
+      <h2 class="question" id="voteQuestion"></h2>
+      <div class="options" id="optionList"></div>
+      <p class="msgline" id="voteMsg"></p>
+    </div>
+
+    <!-- LOCKED -->
+    <div class="screen centre hide" id="screen-locked">
+      <div class="spacer"></div>
+      <div class="tick">&#10003;</div>
+      <h1>Locked in</h1>
+      <div class="chosen-card">
+        <span class="badge" id="lockedBadge">A</span>
+        <span class="ot-title" id="lockedTitle">Your answer</span>
+      </div>
+      <p class="helper">Your answer is in. Watch the big screen for the reveal.</p>
+      <div class="spacer"></div>
+    </div>
+  </div>
+
+<script>
+  var C = window.GG_CONFIG, G = window.GG_GAME;
+  var sb = supabase.createClient(C.supabaseUrl, C.supabaseKey);
+  document.getElementById('logoImg').src = 'assets/images/' + C.images.logo;
+
+  function store(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+  function load(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+  function drop(k) { try { localStorage.removeItem(k); } catch (e) {} }
+  var el = function (id) { return document.getElementById(id); };
+
+  var mySession = load('gg_session');
+  var teamId = load('gg_team_id');
+  var teamName = load('gg_team_name');
+  var voted = {};
+  try { voted = JSON.parse(load('gg_voted') || '{}'); } catch (e) { voted = {}; }
+  var teamChecked = false, sending = false, sig = '', live = null;
+
+  var screens = ['load', 'join', 'wait', 'vote', 'locked'];
+  function show(name) { screens.forEach(function (s) { el('screen-' + s).classList.toggle('hide', s !== name); }); }
+  function setStatus(s) { var d = el('statusDot'); d.classList.remove('live', 'down'); if (s) d.classList.add(s); }
+
+  // Forget this phone's pair (new session, or the pair was cleared).
+  function forget() {
+    teamId = null; teamName = null; voted = {}; teamChecked = false;
+    drop('gg_team_id'); drop('gg_team_name'); drop('gg_voted');
+  }
+
+  // ---- Joining ----
+  var nameInput = el('teamName'), joinBtn = el('joinBtn');
+  nameInput.addEventListener('input', function () { joinBtn.disabled = nameInput.value.trim().length === 0; });
+  nameInput.addEventListener('keydown', function (e) { if (e.key === 'Enter' && !joinBtn.disabled) joinBtn.click(); });
+  joinBtn.addEventListener('click', async function () {
+    var name = nameInput.value.trim();
+    if (!name || !mySession) return;
+    el('joinError').textContent = '';
+    joinBtn.disabled = true; joinBtn.textContent = 'Joining...';
+    var res = await sb.from('gg_teams').insert({ session_id: mySession, name: name }).select('id').single();
+    joinBtn.textContent = 'Join the game';
+    if (res.error) {
+      joinBtn.disabled = false;
+      if (res.error.code === '23505') el('joinError').textContent = 'Another pair already has that name. Try a different one.';
+      else if (res.error.code === '42501') el('joinError').textContent = 'The game has just been reset. Please try again.';
+      else el('joinError').textContent = 'Could not join. Check your signal and try again.';
+      return;
+    }
+    teamId = res.data.id; teamName = name; teamChecked = true; voted = {};
+    store('gg_team_id', teamId); store('gg_team_name', teamName); store('gg_voted', '{}');
+    sig = ''; if (live) render(live); tick();
+  });
+
+  // ---- Voting ----
+  function buildVote(qn) {
+    var q = G.questions[qn];
+    el('voteEyebrow').textContent = 'Question ' + qn + ' of ' + Object.keys(G.questions).length;
+    el('voteQuestion').textContent = q.text;
+    el('voteMsg').textContent = ''; el('voteMsg').className = 'msgline';
+    var list = el('optionList');
+    list.innerHTML = '';
+    Object.keys(q.options).forEach(function (L) {
+      var b = document.createElement('button');
+      b.className = 'option';
+      b.innerHTML = '<span class="badge">' + L + '</span><span class="ot-title"></span>';
+      b.querySelector('.ot-title').textContent = q.options[L];
+      b.addEventListener('click', function () { castVote(qn, L, b); });
+      list.appendChild(b);
+    });
+  }
+
+  function setButtons(chosen, disabled) {
+    el('optionList').querySelectorAll('.option').forEach(function (b) {
+      b.disabled = disabled;
+      b.classList.toggle('chosen', b === chosen);
+      b.classList.toggle('dimmed', !!chosen && b !== chosen);
+    });
+  }
+
+  async function castVote(qn, letter, btn) {
+    if (sending) return;
+    sending = true;
+    setButtons(btn, true);
+    el('voteMsg').className = 'msgline info'; el('voteMsg').textContent = 'Sending your answer...';
+    var res;
+    try { res = await sb.from('gg_votes').insert({ session_id: mySession, team_id: teamId, q: qn, choice: letter }); }
+    catch (e) { res = { error: { code: 'network' } }; }
+    sending = false;
+    if (!res.error) { lockIn(qn, letter); return; }
+    if (res.error.code === '23505') {
+      // Already voted on this question: show the answer the database actually holds.
+      var got = await sb.from('gg_votes').select('choice').eq('team_id', teamId).eq('q', qn).maybeSingle();
+      if (got.data) { lockIn(qn, got.data.choice); return; }
+    }
+    if (res.error.code === '42501') {
+      setButtons(null, true);
+      el('voteMsg').className = 'msgline err'; el('voteMsg').textContent = 'Too late, voting has closed for this question.';
+      return;
+    }
+    setButtons(null, false);
+    el('voteMsg').className = 'msgline err'; el('voteMsg').textContent = 'Not sent. Check your signal and tap your answer again.';
+  }
+
+  function lockIn(qn, letter) {
+    voted[qn] = letter;
+    store('gg_voted', JSON.stringify(voted));
+    sig = 'locked-' + qn;
+    el('lockedBadge').textContent = letter;
+    el('lockedTitle').textContent = G.questions[qn].options[letter] || 'Your answer';
+    show('locked');
+  }
+
+  // ---- What to show, from the live game state ----
+  var WAIT = {
+    join: "You're in. Watch the big screen, the show starts soon.",
+    video: 'Eyes on the big screen for the intro video.',
+    round: 'A new round is starting on the big screen.',
+    question: 'Read the question on the big screen. Voting opens in a moment.',
+    reveal: 'The answer is on the big screen.',
+    scoreboard: 'The scores are on the big screen.',
+    winner: "That's the end of the game. Thanks for playing!"
+  };
+
+  function render(st) {
+    var qn = st.q_index;
+    if (st.phase === 'voting' && G.questions[qn]) {
+      if (voted[qn]) { if (sig !== 'locked-' + qn) lockIn(qn, voted[qn]); return; }
+      if (sig !== 'vote-' + qn) { sig = 'vote-' + qn; buildVote(qn); show('vote'); }
+      return;
+    }
+    if (sending) return;
+    var msg = WAIT[st.phase] || 'Watch the big screen.';
+    if (st.phase === 'closed') msg = voted[qn] ? 'Voting has closed. You answered ' + voted[qn] + '. The answer is coming up.' : 'Voting has closed. No answer from your pair this time.';
+    var s = 'wait-' + st.phase + '-' + qn + '-' + (voted[qn] || '');
+    if (sig === s) return;
+    sig = s;
+    el('waitTeam').textContent = teamName || 'Your pair';
+    el('waitMsg').textContent = msg;
+    show('wait');
+  }
+
+  async function poll() {
+    var res = await sb.from('gg_state').select('session_id, phase, q_index').eq('id', 1).maybeSingle();
+    if (res.error || !res.data) { setStatus('down'); if (!live) show('load'); return; }
+    setStatus('live');
+    live = res.data;
+
+    // A new session from the director: forget the old pair and go back to join.
+    if (live.session_id !== mySession) {
+      forget(); mySession = live.session_id; store('gg_session', mySession);
+    }
+    if (!teamId) { if (sig !== 'join') { sig = 'join'; nameInput.value = ''; joinBtn.disabled = true; show('join'); } return; }
+
+    // Once per load: make sure this pair still exists, and pick up any votes already cast.
+    if (!teamChecked) {
+      var t = await sb.from('gg_teams').select('id').eq('id', teamId).eq('session_id', mySession).maybeSingle();
+      if (t.error) { setStatus('down'); return; }
+      if (!t.data) { forget(); sig = ''; return poll(); }
+      var v = await sb.from('gg_votes').select('q, choice').eq('team_id', teamId);
+      if (v.data) { voted = {}; v.data.forEach(function (x) { voted[x.q] = x.choice; }); store('gg_voted', JSON.stringify(voted)); }
+      teamChecked = true;
+    }
+    render(live);
+  }
+
+  // Never run two checks at once on a slow connection.
+  var polling = false;
+  async function tick() {
+    if (polling) return;
+    polling = true;
+    try { await poll(); } catch (e) { setStatus('down'); }
+    polling = false;
+  }
+  tick();
+  setInterval(tick, 2000);
+</script>
+</body>
+</html>

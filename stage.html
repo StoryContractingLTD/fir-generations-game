@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Generation Game</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700;800;900&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://player.vimeo.com/api/player.js"></script>
+<script src="config.js"></script>
+<script src="content/questions.js"></script>
+<style>
+  :root { --gold:#f3c56b; --gold-deep:#c98a2b; --teal:#4fe0d6; --plum:#4a1d3f; --ink:#16151d; --white:#ffffff; }
+  * { box-sizing:border-box; }
+  html, body { height:100%; margin:0; background:#0d0c12; overflow:hidden; }
+  body { font-family:'Montserrat', Arial, sans-serif; color:var(--white); display:flex; align-items:center; justify-content:center; }
+  #stage { position:relative; width:min(100vw, calc(100vh * 16 / 9)); aspect-ratio:16 / 9; container-type:inline-size; overflow:hidden; }
+  .frame { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
+  #panel { position:absolute; top:10.5%; bottom:11%; left:13%; right:13%; display:flex; flex-direction:column; padding:2.2cqw 2.6cqw; transition:padding .3s; }
+  #panel.with-host { padding-right:15cqw; }
+  #panel.with-pair { padding-right:25cqw; }
+  #panel.flush { padding:0; }
+  section { display:none; flex:1; flex-direction:column; min-height:0; }
+  section.on { display:flex; }
+  .center { align-items:center; justify-content:center; text-align:center; }
+  .eyebrow { font-weight:700; text-transform:uppercase; letter-spacing:.35cqw; font-size:1.25cqw; color:var(--teal); margin:0 0 .8cqw; }
+  .gold { color:var(--gold); text-shadow:0 .25cqw 0 #6b3a12, 0 0 2cqw rgba(243,197,107,.35); }
+  .muted { color:#cfc8dd; }
+
+  /* Host (Max) and extra reveal images */
+  #host { position:absolute; right:1.2cqw; bottom:0; height:38cqw; display:none; filter:drop-shadow(0 1cqw 2cqw rgba(0,0,0,.55)); }
+  #host.on { display:block; animation:slideIn .6s ease-out; }
+  #pair { position:absolute; right:.5cqw; bottom:0; height:34cqw; display:none; }
+  #pair.on { display:flex; animation:slideIn .6s ease-out; }
+  #pair img { height:100%; filter:drop-shadow(0 1cqw 2cqw rgba(0,0,0,.55)); }
+  #pair img + img { margin-left:-6cqw; }
+  @keyframes slideIn { from { transform:translateX(12cqw); opacity:0; } to { transform:none; opacity:1; } }
+
+  /* Waiting */
+  #v-waiting p { font-size:2cqw; font-weight:600; color:#cfc8dd; }
+
+  /* Join */
+  #v-join { flex-direction:row; align-items:center; gap:3cqw; }
+  #v-join .logo { width:32cqw; }
+  .join-right { display:flex; flex-direction:column; align-items:center; text-align:center; }
+  .qr-card { background:#fff; border-radius:1.4cqw; padding:1cqw; box-shadow:0 0 0 .35cqw var(--gold), 0 0 3cqw rgba(79,224,214,.35); }
+  #qr { width:15cqw; height:15cqw; }
+  #qr img, #qr canvas { width:100% !important; height:100% !important; }
+  .join-title { font-size:2.2cqw; font-weight:800; margin:1.6cqw 0 .4cqw; }
+  .join-url { font-size:1cqw; color:#cfc8dd; margin:0; word-break:break-all; max-width:22cqw; }
+  .join-count { margin-top:1.4cqw; font-size:1.6cqw; font-weight:700; color:var(--teal); }
+
+  /* Video */
+  #videoBox { position:relative; width:100%; height:100%; border-radius:1.2cqw; overflow:hidden; background:#000; }
+  #videoBox iframe { position:absolute; inset:0; width:100%; height:100%; border:0; }
+
+  /* Round title */
+  #v-round .logo { width:24cqw; margin-bottom:1.5cqw; }
+  #v-round .round-label { font-size:2cqw; font-weight:800; color:var(--teal); text-transform:uppercase; letter-spacing:.4cqw; margin:0; }
+  #v-round h1 { font-size:5.4cqw; font-weight:900; margin:.6cqw 0 0; line-height:1.05; animation:pop .7s ease-out; }
+  @keyframes pop { 0% { transform:scale(.6); opacity:0; } 70% { transform:scale(1.06); opacity:1; } 100% { transform:scale(1); } }
+
+  /* Question */
+  .q-top { display:flex; align-items:center; justify-content:space-between; gap:1cqw; }
+  .pill { font-size:1.2cqw; font-weight:800; text-transform:uppercase; letter-spacing:.2cqw; padding:.5cqw 1.2cqw; border-radius:99cqw; background:#3a3746; color:#cfc8dd; }
+  .pill.open { background:var(--teal); color:#10262a; animation:pulse 1.4s ease-in-out infinite; }
+  @keyframes pulse { 50% { box-shadow:0 0 0 .6cqw rgba(79,224,214,.25); } }
+  .q-main { display:flex; align-items:center; gap:1.6cqw; margin:.6cqw 0 1.6cqw; }
+  .q-emoji { font-size:6cqw; line-height:1; }
+  #qText { font-size:2.8cqw; font-weight:800; line-height:1.2; margin:0; }
+  .opts { display:grid; grid-template-columns:1fr 1fr; gap:1.2cqw; }
+  .opt { display:flex; align-items:center; gap:1cqw; background:linear-gradient(180deg,#2c2a38,#1f1d29); border:.2cqw solid #5b4d6e; border-radius:1cqw; padding:1.3cqw 1.3cqw; font-size:1.95cqw; font-weight:700; line-height:1.2; transition:all .4s; }
+  .opt .L { flex:0 0 auto; width:3cqw; height:3cqw; border-radius:50%; background:var(--gold); color:#3b2208; display:flex; align-items:center; justify-content:center; font-weight:900; font-size:1.6cqw; }
+  .opt.right { border-color:var(--teal); background:linear-gradient(180deg,#154b4b,#0f3434); box-shadow:0 0 2.5cqw rgba(79,224,214,.5); grid-column:1 / -1; font-size:2.1cqw; animation:pop .6s ease-out; }
+  .opt.right .L { background:var(--teal); color:#10262a; }
+  .opt.gone { display:none; }
+  .q-reveal { display:none; margin-top:1.4cqw; }
+  .q-reveal.on { display:block; }
+  #revText { font-size:1.6cqw; font-weight:600; line-height:1.4; margin:0 0 1.2cqw; color:#f2eef8; }
+  .prompt { border:.2cqw solid var(--gold); border-radius:1cqw; padding:.9cqw 1.2cqw; background:rgba(243,197,107,.08); font-size:1.5cqw; font-weight:600; line-height:1.35; }
+  .prompt b { display:block; color:var(--gold); text-transform:uppercase; letter-spacing:.2cqw; font-size:1.1cqw; margin-bottom:.3cqw; }
+  .q-foot { margin-top:auto; padding-top:1cqw; font-size:1.4cqw; font-weight:700; color:var(--teal); }
+
+  /* Scores */
+  #v-scores h1, #v-winner h1 { font-size:3.4cqw; font-weight:900; margin:0 0 1.4cqw; }
+  .board { display:grid; grid-auto-flow:column; grid-template-rows:repeat(5, auto); gap:.8cqw 2cqw; }
+  .board.one-col { grid-auto-flow:row; }
+  .brow { display:flex; align-items:center; gap:1cqw; background:#24222f; border-radius:.8cqw; padding:.7cqw 1.1cqw; font-size:1.6cqw; font-weight:700; animation:rise .5s ease-out both; }
+  .brow .rank { color:var(--teal); width:2.4cqw; }
+  .brow .nm { flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .brow .pts { color:var(--gold); font-weight:900; }
+  .brow.lead { box-shadow:0 0 0 .2cqw var(--gold); }
+  @keyframes rise { from { transform:translateY(1.5cqw); opacity:0; } to { transform:none; opacity:1; } }
+
+  /* Winner */
+  #v-winner .logo { width:22cqw; margin-bottom:1cqw; }
+  #v-winner h1 { margin-bottom:.6cqw; }
+  #winNames { font-size:4.4cqw; font-weight:900; line-height:1.15; margin:0 0 1cqw; animation:pop .8s ease-out; }
+  #winScore { font-size:1.8cqw; font-weight:700; color:var(--teal); margin:0; }
+  #confetti { position:absolute; inset:0; pointer-events:none; overflow:hidden; display:none; }
+  #confetti.on { display:block; }
+  #confetti i { position:absolute; top:-3cqw; width:.8cqw; height:1.4cqw; border-radius:.2cqw; animation:fall linear infinite; }
+  @keyframes fall { to { transform:translateY(62cqw) rotate(720deg); } }
+
+  /* Countdown */
+  #countdown { position:absolute; top:12%; right:14.5%; width:7cqw; height:7cqw; border-radius:50%; border:.45cqw solid var(--teal); background:rgba(16,38,42,.92); display:none; align-items:center; justify-content:center; font-size:3.4cqw; font-weight:900; color:var(--white); }
+  #countdown.on { display:flex; }
+  #countdown.done { font-size:1.2cqw; border-color:var(--gold); color:var(--gold); text-align:center; line-height:1.1; }
+
+  /* Start overlay */
+  #start { position:fixed; inset:0; background:radial-gradient(circle at 50% 40%, #3b1834, #0d0c12 70%); display:flex; flex-direction:column; align-items:center; justify-content:center; z-index:10; }
+  #start img { width:min(60vw, 900px); }
+  #start button { margin-top:3vh; font-family:'Montserrat', Arial, sans-serif; font-size:clamp(18px, 2.4vw, 34px); font-weight:800; padding:1.2vw 3vw; border-radius:999px; border:4px solid var(--gold); background:var(--plum); color:var(--gold); cursor:pointer; }
+  #start button:hover { background:#5c2550; }
+  #start p { color:#cfc8dd; font-size:clamp(13px, 1.1vw, 18px); margin-top:2vh; }
+  .hide { display:none !important; }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation:none !important; transition:none !important; } }
+</style>
+</head>
+<body>
+  <div id="stage">
+    <img class="frame" id="frameImg" alt="">
+    <div id="panel">
+      <section id="v-waiting" class="on center"><p>Waiting for the control screen to connect...</p></section>
+
+      <section id="v-join">
+        <img class="logo" data-img="logo" alt="The Generations Game">
+        <div class="join-right">
+          <div class="qr-card"><div id="qr"></div></div>
+          <p class="join-title gold">Scan to join with your partner</p>
+          <p class="join-url" id="joinUrl"></p>
+          <p class="join-count" id="joinCount"></p>
+        </div>
+      </section>
+
+      <section id="v-video"><div id="videoBox"></div></section>
+
+      <section id="v-round" class="center">
+        <img class="logo" data-img="logo" alt="">
+        <p class="round-label" id="roundLabel"></p>
+        <h1 class="gold" id="roundTitle"></h1>
+      </section>
+
+      <section id="v-question">
+        <div class="q-top"><p class="eyebrow" id="qEyebrow"></p><span class="pill" id="qPill"></span></div>
+        <div class="q-main"><div class="q-emoji" id="qEmoji"></div><h1 id="qText"></h1></div>
+        <div class="opts" id="qOpts"></div>
+        <div class="q-reveal" id="qReveal"><p id="revText"></p><div class="prompt" id="revPrompt"><b id="revPromptLbl"></b><span id="revPromptTxt"></span></div></div>
+        <div class="q-foot" id="qFoot"></div>
+      </section>
+
+      <section id="v-scores">
+        <p class="eyebrow" id="scoreEyebrow"></p>
+        <h1 class="gold">The scores</h1>
+        <div class="board" id="board"></div>
+      </section>
+
+      <section id="v-winner" class="center">
+        <img class="logo" data-img="logo" alt="">
+        <h1 id="winHead"></h1>
+        <p class="gold" id="winNames"></p>
+        <p id="winScore"></p>
+      </section>
+    </div>
+
+    <img id="host" alt="Max Sparkles">
+    <div id="pair"></div>
+    <div id="countdown"></div>
+    <div id="confetti"></div>
+  </div>
+
+  <div id="start">
+    <img data-img="logo" alt="The Generations Game">
+    <button id="startBtn">Click to start the show</button>
+    <p>Drag this window onto the projector first. This click turns the sound on and goes full screen.</p>
+  </div>
+
+<script>
+  var C = window.GG_CONFIG, G = window.GG_GAME, S = C.sounds, I = C.images;
+  var IMG = 'assets/images/', AUD = 'assets/audio/';
+  var el = function (id) { return document.getElementById(id); };
+  function pad(n) { return (n < 10 ? '0' : '') + n; }
+
+  el('frameImg').src = IMG + I.screen;
+  document.querySelectorAll('[data-img="logo"]').forEach(function (i) { i.src = IMG + I.logo; });
+
+  // ---- Sound ----
+  var started = false, main = null, mainToken = null, actx = null;
+  function stopAudio() { mainToken = {}; if (main) { main.pause(); main.removeAttribute('src'); main.load(); main = null; } }
+  function playList(files, loop) {
+    stopAudio();
+    var token = mainToken, list = files.filter(Boolean);
+    (function next() {
+      if (mainToken !== token) return;
+      var f = list.shift();
+      if (!f) { main = null; return; }
+      var a = new Audio(AUD + f);
+      a.loop = !!loop && list.length === 0;
+      main = a;
+      a.addEventListener('ended', next);
+      a.addEventListener('error', next);
+      var p = a.play(); if (p && p.catch) p.catch(function () {});
+    })();
+  }
+  function playFx(f, onFail) {
+    if (!f) { if (onFail) onFail(); return; }
+    var a = new Audio(AUD + f);
+    a.addEventListener('error', function () { if (onFail) onFail(); });
+    var p = a.play(); if (p && p.catch) p.catch(function () {});
+  }
+  function beep(freq, dur) {
+    try {
+      actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+      var o = actx.createOscillator(), g = actx.createGain(), t = actx.currentTime;
+      o.type = 'sine'; o.frequency.value = freq;
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.12, t + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.connect(g); g.connect(actx.destination); o.start(t); o.stop(t + dur + 0.05);
+    } catch (e) {}
+  }
+
+  function playCue(st) {
+    var n = pad(st.q);
+    switch (st.phase) {
+      case 'join': playList([S.joinLoop], true); break;
+      case 'video': stopAudio(); break;
+      case 'round': playList([G.rounds[st.round].sound]); break;
+      case 'question': playList([S.question, 'q' + n + '.mp3']); break;
+      case 'voting': playFx(S.votingOpen); break;
+      case 'closed': playFx(S.votingClosed); hideCountdown(); break;
+      case 'reveal': playList([S.reveal, 'q' + n + '-reveal.mp3']); break;
+      case 'scoreboard': playList([S.scoreboard]); break;
+      case 'winner': playList([S.winner]); break;
+    }
+  }
+
+  // ---- 5-second cue ----
+  var cdTimer = null;
+  function hideCountdown() { clearInterval(cdTimer); el('countdown').className = ''; }
+  function runCountdown() {
+    clearInterval(cdTimer);
+    var useBeeps = false, left = 5, box = el('countdown');
+    playFx(S.countdown, function () { useBeeps = true; });
+    function tick() {
+      if (left > 0) {
+        box.className = 'on'; box.textContent = left;
+        if (useBeeps) beep(left === 1 ? 880 : 660, 0.18);
+        left--;
+      } else {
+        clearInterval(cdTimer);
+        if (useBeeps) beep(990, 0.35);
+        box.className = 'on done'; box.innerHTML = 'Time<br>up';
+      }
+    }
+    setTimeout(function () { tick(); cdTimer = setInterval(tick, 1000); }, 300);
+  }
+
+  // ---- Video ----
+  var player = null, videoOn = false;
+  function startVideo() {
+    if (videoOn) return;
+    videoOn = true; stopAudio();
+    var f = document.createElement('iframe');
+    f.src = 'https://player.vimeo.com/video/' + C.vimeoId + '?h=' + C.vimeoHash + '&badge=0&autopause=0&autoplay=1&title=0&byline=0&portrait=0&app_id=58479';
+    f.allow = 'autoplay; fullscreen; picture-in-picture; clipboard-write; encrypted-media';
+    f.referrerPolicy = 'strict-origin-when-cross-origin';
+    f.title = 'Intro video';
+    el('videoBox').innerHTML = '';
+    el('videoBox').appendChild(f);
+    try {
+      player = new Vimeo.Player(f);
+      player.on('ended', function () { if (window.opener) window.opener.postMessage({ type: 'video-ended' }, '*'); });
+      player.play().catch(function () {});
+    } catch (e) { player = null; }
+  }
+  function stopVideo() {
+    if (!videoOn) return;
+    videoOn = false;
+    try { if (player) player.unload(); } catch (e) {}
+    player = null;
+    el('videoBox').innerHTML = '';
+  }
+
+  // ---- Confetti ----
+  (function () {
+    var cols = ['#f3c56b', '#4fe0d6', '#b25aa0', '#ffffff', '#c98a2b'], h = '';
+    for (var i = 0; i < 90; i++) {
+      h += '<i style="left:' + (Math.random() * 100).toFixed(1) + '%;background:' + cols[i % cols.length] +
+        ';animation-duration:' + (3 + Math.random() * 3).toFixed(2) + 's;animation-delay:-' + (Math.random() * 6).toFixed(2) + 's"></i>';
+    }
+    el('confetti').innerHTML = h;
+  })();
+
+  // ---- Drawing each screen ----
+  var lastQrUrl = '', lastSig = '', lastCue = null, lastCountdown = null, current = null;
+
+  function showSection(id) {
+    document.querySelectorAll('#panel section').forEach(function (s) { s.classList.toggle('on', s.id === id); });
+  }
+  function setHost(mode, file, pairFiles) {
+    var panel = el('panel'), host = el('host'), pair = el('pair');
+    panel.classList.remove('with-host', 'with-pair', 'flush');
+    host.classList.remove('on'); pair.classList.remove('on');
+    if (mode === 'flush') { panel.classList.add('flush'); return; }
+    if (mode === 'pair' && pairFiles) {
+      var h = pairFiles.map(function (f) { return '<img src="' + IMG + f + '" alt="">'; }).join('');
+      if (pair.getAttribute('data-files') !== h) { pair.innerHTML = h; pair.setAttribute('data-files', h); }
+      pair.classList.add('on'); panel.classList.add('with-pair'); return;
+    }
+    if (mode === 'host' && file) {
+      if (host.getAttribute('src') !== IMG + file) host.src = IMG + file;
+      host.classList.add('on'); panel.classList.add('with-host');
+    }
+  }
+
+  function render(st) {
+    var sig = JSON.stringify([st.phase, st.q, st.round, st.joinUrl, st.teamCount, st.answered, st.correct, st.scores, st.winners]);
+    if (sig === lastSig) return;
+    lastSig = sig;
+    el('confetti').classList.toggle('on', st.phase === 'winner');
+    if (st.phase !== 'voting') hideCountdown();
+    if (st.phase === 'video') { showSection('v-video'); setHost('flush'); if (started) startVideo(); return; }
+    stopVideo();
+
+    if (st.phase === 'join') {
+      showSection('v-join'); setHost('host', I.maxWelcome);
+      el('joinUrl').textContent = st.joinUrl;
+      el('joinCount').textContent = st.teamCount === 1 ? '1 pair has joined' : st.teamCount + ' pairs have joined';
+      if (st.joinUrl && st.joinUrl !== lastQrUrl) {
+        lastQrUrl = st.joinUrl; el('qr').innerHTML = '';
+        new QRCode(el('qr'), { text: st.joinUrl, width: 512, height: 512, colorDark: '#16151d', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.M });
+      }
+      return;
+    }
+
+    if (st.phase === 'round') {
+      var r = G.rounds[st.round];
+      showSection('v-round'); setHost('host', I.maxWelcome);
+      el('roundLabel').textContent = r.label;
+      el('roundTitle').textContent = r.title;
+      return;
+    }
+
+    if (st.phase === 'scoreboard') {
+      showSection('v-scores'); setHost('host', I.maxScores);
+      el('scoreEyebrow').textContent = 'After ' + G.rounds[st.round].label;
+      drawBoard(st.scores);
+      return;
+    }
+
+    if (st.phase === 'winner') {
+      showSection('v-winner'); setHost('host', I.maxWinner);
+      var w = st.winners || [];
+      if (!w.length) { el('winHead').textContent = 'Thanks for playing!'; el('winNames').textContent = ''; el('winScore').textContent = ''; return; }
+      el('winHead').textContent = w.length > 1 ? 'Our joint winners are' : 'And the winner is';
+      el('winNames').textContent = w.join('  &  ');
+      el('winScore').textContent = st.topScore + ' out of ' + st.total + ' points';
+      return;
+    }
+
+    // question, voting, closed, reveal
+    var q = G.questions[st.q];
+    var r2 = G.rounds[st.round];
+    var isReveal = st.phase === 'reveal';
+    showSection('v-question');
+    if (isReveal && q.revealImages) setHost('pair', null, q.revealImages);
+    else if (isReveal) setHost('host', I.maxCorrect);
+    else setHost('none');
+    el('qEyebrow').textContent = r2.label + '  |  Question ' + st.q + ' of ' + st.total;
+    el('qEmoji').textContent = q.emoji || '';
+    el('qEmoji').style.display = q.emoji ? 'block' : 'none';
+    el('qText').textContent = q.text;
+    el('qText').style.fontSize = isReveal ? '1.9cqw' : '';
+    var pill = el('qPill');
+    pill.className = 'pill' + (st.phase === 'voting' ? ' open' : '');
+    pill.textContent = st.phase === 'voting' ? 'Voting open' : st.phase === 'closed' ? 'Voting closed' : isReveal ? 'The answer' : 'Get ready';
+    el('qOpts').innerHTML = Object.keys(q.options).map(function (L) {
+      var cls = 'opt' + (isReveal ? (L === q.answer ? ' right' : ' gone') : '');
+      return '<div class="' + cls + '"><span class="L">' + L + '</span><span>' + escapeHtml(q.options[L]) + '</span></div>';
+    }).join('');
+    el('qReveal').classList.toggle('on', isReveal);
+    if (isReveal) {
+      el('revText').textContent = q.reveal;
+      var promptTxt = q.partner || q.room || '';
+      el('revPrompt').style.display = promptTxt ? 'block' : 'none';
+      el('revPromptLbl').textContent = q.partner ? 'Ask your partner' : 'Max asks the room';
+      el('revPromptTxt').textContent = promptTxt;
+    }
+    var foot = '';
+    if (st.phase === 'question') foot = 'Voting opens in a moment';
+    else if (st.phase === 'voting' || st.phase === 'closed') foot = st.answered + ' of ' + st.teamCount + (st.teamCount === 1 ? ' pair has' : ' pairs have') + ' answered';
+    else if (isReveal) foot = st.correct + ' of ' + st.teamCount + (st.teamCount === 1 ? ' pair' : ' pairs') + ' got it right';
+    el('qFoot').textContent = foot;
+  }
+
+  function drawBoard(scores) {
+    var list = (scores || []).slice(0, 10);
+    var b = el('board');
+    b.classList.toggle('one-col', list.length <= 5);
+    var top = list.length ? list[0].score : 0;
+    var rank = 0, prev = null;
+    b.innerHTML = list.map(function (x, i) {
+      if (x.score !== prev) { rank = i + 1; prev = x.score; }
+      return '<div class="brow' + (x.score === top && top > 0 ? ' lead' : '') + '" style="animation-delay:' + (i * 0.08) + 's"><span class="rank">' + rank + '</span><span class="nm">' +
+        escapeHtml(x.name) + '</span><span class="pts">' + x.score + '</span></div>';
+    }).join('') || '<p class="muted" style="font-size:1.6cqw">No pairs have joined yet.</p>';
+  }
+  function escapeHtml(t) { return String(t).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+
+  // ---- Messages from the control screen ----
+  var lastMsgAt = 0;
+  window.addEventListener('message', function (e) {
+    var m = e.data || {};
+    if (m.type !== 'display' || !m.state) return;
+    lastMsgAt = Date.now();
+    var st = m.state; current = st;
+    render(st);
+    // Sounds and the countdown fire once, and only if fresh (so a reload does not replay them).
+    if (st.cue && st.cue.id !== lastCue) {
+      lastCue = st.cue.id;
+      if (started && Date.now() - st.cue.at < 4000) playCue(st);
+    }
+    if (st.countdown && st.countdown.id !== lastCountdown) {
+      lastCountdown = st.countdown.id;
+      if (started && st.phase === 'voting' && Date.now() - st.countdown.at < 4000) runCountdown();
+    }
+  });
+
+  el('startBtn').addEventListener('click', function () {
+    started = true;
+    el('start').classList.add('hide');
+    try { actx = actx || new (window.AudioContext || window.webkitAudioContext)(); actx.resume(); } catch (e) {}
+    try { if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(function () {}); } catch (e) {}
+    if (current) {
+      if (current.phase === 'video') startVideo();
+      else if (current.phase === 'join') playCue(current);
+    }
+  });
+
+  // Tell the control screen we are here (and keep saying so if it is reloaded).
+  function sayReady() { if (window.opener) { try { window.opener.postMessage({ type: 'stage-ready' }, '*'); } catch (e) {} } }
+  sayReady();
+  setInterval(function () { if (Date.now() - lastMsgAt > 3000) sayReady(); }, 3000);
+</script>
+</body>
+</html>
