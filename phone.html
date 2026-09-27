@@ -54,6 +54,9 @@
   .msgline { font-size:15px; font-weight:600; margin:4px 0 0; min-height:20px; text-align:center; }
   .msgline.err { color:#b00020; }
   .msgline.info { color:var(--story-blue); }
+  .timer { font-family:'Montserrat', Arial, sans-serif; font-weight:700; font-size:15px; color:var(--story-blue); background:#e9f1f9; border-radius:999px; padding:6px 14px; align-self:flex-start; margin:0 0 12px; }
+  .timer.hurry { background:#fdf0e0; color:#b35c00; }
+  .centre .timer { align-self:center; }
   .hide { display:none !important; }
 </style>
 </head>
@@ -95,6 +98,7 @@
 
     <!-- VOTING -->
     <div class="screen hide" id="screen-vote">
+      <p class="timer hide" data-timer></p>
       <p class="eyebrow" id="voteEyebrow">Question 1</p>
       <h2 class="question" id="voteQuestion"></h2>
       <div class="options" id="optionList"></div>
@@ -111,6 +115,7 @@
         <span class="ot-title" id="lockedTitle">Your answer</span>
       </div>
       <p class="helper">Your answer is in. Watch the big screen for the reveal.</p>
+      <p class="timer hide" data-timer></p>
       <div class="spacer"></div>
     </div>
   </div>
@@ -254,7 +259,7 @@
   }
 
   async function poll() {
-    var res = await sb.from('gg_state').select('session_id, phase, q_index').eq('id', 1).maybeSingle();
+    var res = await sb.from('gg_state').select('session_id, phase, q_index, updated_at').eq('id', 1).maybeSingle();
     if (res.error || !res.data) { setStatus('down'); if (!live) show('load'); return; }
     setStatus('live');
     live = res.data;
@@ -287,6 +292,20 @@
   }
   tick();
   setInterval(tick, 2000);
+
+  // ---- Voting timer: time left, worked out from when voting opened ----
+  var VOTE_MS = (C.votingSeconds || 60) * 1000;
+  setInterval(function () {
+    var boxes = document.querySelectorAll('[data-timer]');
+    var on = live && live.phase === 'voting' && live.updated_at;
+    var left = on ? Math.ceil((Date.parse(live.updated_at) + VOTE_MS - Date.now()) / 1000) : 0;
+    left = Math.max(0, Math.min(left, VOTE_MS / 1000));
+    boxes.forEach(function (b) {
+      b.classList.toggle('hide', !on);
+      b.classList.toggle('hurry', on && left <= 10);
+      if (on) b.textContent = left + (left === 1 ? ' second left' : ' seconds left');
+    });
+  }, 250);
 </script>
 </body>
 </html>

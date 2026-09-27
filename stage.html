@@ -107,7 +107,7 @@
   /* Countdown */
   #countdown { position:absolute; top:12%; right:14.5%; width:7cqw; height:7cqw; border-radius:50%; border:.45cqw solid var(--teal); background:rgba(16,38,42,.92); display:none; align-items:center; justify-content:center; font-size:3.4cqw; font-weight:900; color:var(--white); }
   #countdown.on { display:flex; }
-  #countdown.done { font-size:1.2cqw; border-color:var(--gold); color:var(--gold); text-align:center; line-height:1.1; }
+  #countdown.hurry { border-color:var(--gold); color:var(--gold); animation:pulse .8s ease-in-out infinite; }
 
   /* Start overlay */
   #start { position:fixed; inset:0; background:radial-gradient(circle at 50% 40%, #3b1834, #0d0c12 70%); display:flex; flex-direction:column; align-items:center; justify-content:center; z-index:10; }
@@ -187,15 +187,20 @@
   document.querySelectorAll('[data-img="logo"]').forEach(function (i) { i.src = IMG + I.logo; });
 
   // ---- Sound ----
-  var started = false, main = null, mainToken = null, actx = null;
-  function stopAudio() { mainToken = {}; if (main) { main.pause(); main.removeAttribute('src'); main.load(); main = null; } }
-  function playList(files, loop) {
-    stopAudio();
+  var started = false, main = null, mainToken = null, actx = null, extras = [];
+  function stopAudio() {
+    mainToken = {};
+    if (main) { main.pause(); main.removeAttribute('src'); main.load(); main = null; }
+    extras.forEach(function (a) { try { a.pause(); } catch (e) {} });
+    extras = [];
+  }
+  // Plays files one after another. onDone runs when the last one finishes (or is missing).
+  function runList(files, loop, onDone) {
     var token = mainToken, list = files.filter(Boolean);
     (function next() {
       if (mainToken !== token) return;
       var f = list.shift();
-      if (!f) { main = null; return; }
+      if (!f) { main = null; if (onDone) onDone(); return; }
       var a = new Audio(AUD + f);
       a.loop = !!loop && list.length === 0;
       main = a;
@@ -203,6 +208,48 @@
       a.addEventListener('error', next);
       var p = a.play(); if (p && p.catch) p.catch(function () {});
     })();
+  }
+  function playList(files, loop, onDone) { stopAudio(); runList(files, loop, onDone); }
+  // A sound that plays alongside Max (music, cheers). Stopped when the screen moves on.
+  function extra(f, vol, loop) {
+    if (!f) return null;
+    var a = new Audio(AUD + f);
+    a.volume = vol; a.loop = !!loop;
+    extras.push(a);
+    var p = a.play(); if (p && p.catch) p.catch(function () {});
+    return a;
+  }
+  function fade(a, to, ms) {
+    if (!a) return;
+    var from = a.volume, t0 = Date.now();
+    var iv = setInterval(function () {
+      var k = Math.min(1, (Date.now() - t0) / ms);
+      try { a.volume = from + (to - from) * k; } catch (e) {}
+      if (k >= 1) clearInterval(iv);
+    }, 50);
+  }
+  // Music (voting loop, end music, join music) follows the Music on/off toggle on the control screen.
+  var musicOn = true;
+  function music(f, vol, loop) {
+    var a = extra(f, musicOn ? vol : 0, loop);
+    if (a) { a.isMusic = true; a.base = vol; }
+    return a;
+  }
+  function applyMusic() {
+    extras.forEach(function (a) { if (a.isMusic) { try { a.volume = musicOn ? a.base : 0; } catch (e) {} } });
+  }
+  function fadeMusic(a, to, ms) {
+    if (!a) return;
+    var from = a.base, t0 = Date.now();
+    var iv = setInterval(function () {
+      var k = Math.min(1, (Date.now() - t0) / ms);
+      a.base = from + (to - from) * k;
+      try { a.volume = musicOn ? a.base : 0; } catch (e) {}
+      if (k >= 1) clearInterval(iv);
+    }, 50);
+  }
+  function report(type, st) {
+    if (window.opener) { try { window.opener.postMessage({ type: type, q: st.q }, '*'); } catch (e) {} }
   }
   function playFx(f, onFail) {
     if (!f) { if (onFail) onFail(); return; }
@@ -225,38 +272,53 @@
   function playCue(st) {
     var n = pad(st.q);
     switch (st.phase) {
-      case 'join': playList([S.joinLoop], true); break;
+      case 'join': stopAudio(); music(S.joinLoop, 1, true); break;
       case 'video': stopAudio(); break;
       case 'round': playList([G.rounds[st.round].sound]); break;
-      case 'question': playList([S.question, 'q' + n + '.mp3']); break;
-      case 'voting': playFx(S.votingOpen); break;
-      case 'closed': playFx(S.votingClosed); hideCountdown(); break;
-      case 'reveal': playList([S.reveal, 'q' + n + '-reveal.mp3']); break;
+      // Max reads the question, then voting opens by itself.
+      case 'question': playList([S.question, 'q' + n + '.mp3'], false, function () { report('question-done', st); }); break;
+      // Music loops while pairs vote.
+      case 'voting': stopAudio(); extra(S.votingOpen, 1); music(S.votingMusic, 0.6, true); break;
+      // Max says "The votes are in!" or "Time's up!", a one-second pause, then the reveal.
+      case 'closed':
+        playList([S.votingClosed, st.closeReason === 'votes-in' ? S.votesIn : S.timesUp], false, function () {
+          setTimeout(function () { report('closed-done', st); }, 1000);
+        });
+        break;
+      // Cheer, then Max explains the answer with the cheer faded down behind him.
+      case 'reveal':
+        stopAudio();
+        var tk = mainToken, ch = extra(S.cheer, 1);
+        setTimeout(function () { if (mainToken !== tk) return; fade(ch, 0.2, 600); runList([S.reveal, 'q' + n + '-reveal.mp3']); }, 1500);
+        break;
       case 'scoreboard': playList([S.scoreboard]); break;
-      case 'winner': playList([S.winner]); break;
+      // End music quietly under Max, then up loud with applause when he finishes.
+      case 'winner':
+        stopAudio();
+        var bed = music(S.showEnd, 0.3);
+        runList([S.winner], false, function () { fadeMusic(bed, 1, 1500); extra(S.applause, 1); });
+        break;
     }
   }
 
-  // ---- 5-second cue ----
-  var cdTimer = null;
-  function hideCountdown() { clearInterval(cdTimer); el('countdown').className = ''; }
-  function runCountdown() {
-    clearInterval(cdTimer);
-    var useBeeps = false, left = 5, box = el('countdown');
-    playFx(S.countdown, function () { useBeeps = true; });
-    function tick() {
-      if (left > 0) {
-        box.className = 'on'; box.textContent = left;
-        if (useBeeps) beep(left === 1 ? 880 : 660, 0.18);
-        left--;
-      } else {
-        clearInterval(cdTimer);
-        if (useBeeps) beep(990, 0.35);
-        box.className = 'on done'; box.innerHTML = 'Time<br>up';
-      }
+  // ---- Voting timer (and the countdown sound for the last 5 seconds) ----
+  var cdPlayedFor = null, useBeeps = false, lastBeep = null;
+  function hideCountdown() { el('countdown').className = ''; }
+  setInterval(function () {
+    var st = current, box = el('countdown');
+    if (!st || st.phase !== 'voting' || !st.endsAt) { hideCountdown(); return; }
+    var left = Math.max(0, Math.ceil((st.endsAt - Date.now()) / 1000));
+    box.className = 'on' + (left <= 5 ? ' hurry' : '');
+    box.textContent = left;
+    if (!started) return;
+    if (left <= 5 && left > 0 && cdPlayedFor !== st.endsAt) {
+      cdPlayedFor = st.endsAt; useBeeps = false; lastBeep = null;
+      playFx(S.countdown, function () { useBeeps = true; });
     }
-    setTimeout(function () { tick(); cdTimer = setInterval(tick, 1000); }, 300);
-  }
+    if (useBeeps && cdPlayedFor === st.endsAt && left <= 5 && left > 0 && lastBeep !== left) {
+      lastBeep = left; beep(left === 1 ? 880 : 660, 0.18);
+    }
+  }, 200);
 
   // ---- Video ----
   var player = null, videoOn = false;
@@ -317,7 +379,7 @@
   }
 
   function render(st) {
-    var sig = JSON.stringify([st.phase, st.q, st.round, st.joinUrl, st.teamCount, st.answered, st.correct, st.scores, st.winners]);
+    var sig = JSON.stringify([st.phase, st.q, st.round, st.joinUrl, st.teamCount, st.answered, st.correct, st.scores, st.winners, st.closeReason]);
     if (sig === lastSig) return;
     lastSig = sig;
     el('confetti').classList.toggle('on', st.phase === 'winner');
@@ -376,7 +438,7 @@
     el('qText').style.fontSize = isReveal ? '1.9cqw' : '';
     var pill = el('qPill');
     pill.className = 'pill' + (st.phase === 'voting' ? ' open' : '');
-    pill.textContent = st.phase === 'voting' ? 'Voting open' : st.phase === 'closed' ? 'Voting closed' : isReveal ? 'The answer' : 'Get ready';
+    pill.textContent = st.phase === 'voting' ? 'Voting open' : st.phase === 'closed' ? (st.closeReason === 'votes-in' ? 'The votes are in!' : "Time's up!") : isReveal ? 'The answer' : 'Get ready';
     el('qOpts').innerHTML = Object.keys(q.options).map(function (L) {
       var cls = 'opt' + (isReveal ? (L === q.answer ? ' right' : ' gone') : '');
       return '<div class="' + cls + '"><span class="L">' + L + '</span><span>' + escapeHtml(q.options[L]) + '</span></div>';
@@ -417,15 +479,12 @@
     if (m.type !== 'display' || !m.state) return;
     lastMsgAt = Date.now();
     var st = m.state; current = st;
+    if (st.musicOn !== undefined && st.musicOn !== musicOn) { musicOn = st.musicOn; applyMusic(); }
     render(st);
     // Sounds and the countdown fire once, and only if fresh (so a reload does not replay them).
     if (st.cue && st.cue.id !== lastCue) {
       lastCue = st.cue.id;
       if (started && Date.now() - st.cue.at < 4000) playCue(st);
-    }
-    if (st.countdown && st.countdown.id !== lastCountdown) {
-      lastCountdown = st.countdown.id;
-      if (started && st.phase === 'voting' && Date.now() - st.countdown.at < 4000) runCountdown();
     }
   });
 

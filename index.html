@@ -86,6 +86,7 @@
         <div class="row">
           <button class="btn ghost" id="backBtn">Back one step</button>
           <button class="btn ghost" id="cueBtn">5-second cue</button>
+          <button class="btn ghost" id="musicBtn">Music: on</button>
           <select id="jumpSel" aria-label="Jump to a step"></select>
         </div>
         <p class="err" id="errLine"></p>
@@ -95,7 +96,7 @@
     <div>
       <div class="card">
         <p class="eyebrow">Live</p>
-        <h2>Pairs <span class="count" id="teamCount">(0)</span> <span class="count" id="answeredCount"></span></h2>
+        <h2>Pairs <span class="count" id="teamCount">(0)</span> <span class="count" id="answeredCount"></span> <span class="count" id="timerText"></span></h2>
         <div class="teams" id="teamList"></div>
         <p class="empty" id="teamEmpty">No pairs yet. They pop up here as they join.</p>
         <div class="tally" id="tally"></div>
@@ -156,7 +157,10 @@
 
   // ---- State ----
   var sessionId = null, step = 0, teams = [], votes = [], busy = false;
-  var cue = { id: 0, at: 0 }, countdown = { id: 0, at: 0 };
+  var cue = { id: 0, at: 0 };
+  var VOTE_MS = (C.votingSeconds || 60) * 1000;
+  var votingEndsAt = 0, closeReason = 'times-up', ending = false, autoReveal = false, revealFallback = null;
+  var musicOn = true;
 
   var el = function (id) { return document.getElementById(id); };
   function esc(t) { return String(t).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
@@ -192,7 +196,7 @@
       scores: scores,
       winners: scores.filter(function (x) { return x.score === top; }).map(function (x) { return x.name; }),
       topScore: top,
-      cue: cue, countdown: countdown
+      cue: cue, endsAt: votingEndsAt, closeReason: closeReason, musicOn: musicOn
     };
   }
 
@@ -208,6 +212,10 @@
     var m = e.data || {};
     if (m.type === 'stage-ready') { if (!stageWin && e.source) stageWin = e.source; sendToStage(); }
     if (m.type === 'video-ended' && STEPS[step].phase === 'video') goTo(step + 1);
+    // Max has finished reading the question: open voting.
+    if (m.type === 'question-done' && STEPS[step].phase === 'question' && m.q === STEPS[step].q) goTo(step + 1);
+    // "The votes are in" or "Time's up" has finished: reveal.
+    if (m.type === 'closed-done' && STEPS[step].phase === 'closed') finishClose();
   });
   el('openBtn').addEventListener('click', function () {
     stageWin = window.open('stage.html', 'ggStage', 'width=1280,height=760');
@@ -230,15 +238,62 @@
     }
     showErr('');
     step = i;
+    autoReveal = false; clearTimeout(revealFallback);
+    votingEndsAt = s.phase === 'voting' ? Date.now() + VOTE_MS : 0;
     cue = { id: cue.id + 1, at: Date.now() };
     render(); sendToStage(); poll();
   }
-  el('nextBtn').addEventListener('click', function () { goTo(step + 1); });
+
+  // ---- Automatic voting: timer, "everyone has voted", then the reveal ----
+  function allIn() {
+    var s = STEPS[step], ids = {};
+    votes.forEach(function (v) { if (v.q === s.q) ids[v.team_id] = 1; });
+    return teams.length > 0 && Object.keys(ids).length >= teams.length;
+  }
+  async function endVoting() {
+    if (ending || busy || STEPS[step].phase !== 'voting') return;
+    ending = true;
+    closeReason = allIn() ? 'votes-in' : 'times-up';
+    await goTo(step + 1);
+    ending = false;
+    if (STEPS[step].phase === 'closed') {
+      autoReveal = true;
+      clearTimeout(revealFallback);
+      revealFallback = setTimeout(finishClose, 10000); // in case the big screen never reports back
+    }
+  }
+  function finishClose() {
+    clearTimeout(revealFallback);
+    if (!autoReveal || STEPS[step].phase !== 'closed') return;
+    autoReveal = false;
+    goTo(step + 1);
+  }
+  setInterval(function () {
+    if (STEPS[step].phase !== 'voting' || !votingEndsAt) { el('timerText').textContent = ''; return; }
+    var left = Math.max(0, Math.ceil((votingEndsAt - Date.now()) / 1000));
+    el('timerText').textContent = left + 's left';
+    if (allIn() || left <= 0) endVoting();
+  }, 250);
+  setInterval(function () { if (STEPS[step].phase === 'voting') poll(); }, 1000);
+
+  el('nextBtn').addEventListener('click', function () {
+    if (STEPS[step].phase === 'voting') endVoting(); else goTo(step + 1);
+  });
   el('backBtn').addEventListener('click', function () { goTo(step - 1); });
   el('jumpSel').addEventListener('change', function () { goTo(parseInt(this.value, 10)); });
+  // Music on/off: mutes the music straight away on the big screen. Max and the sound effects carry on.
+  el('musicBtn').addEventListener('click', function () {
+    musicOn = !musicOn;
+    this.textContent = musicOn ? 'Music: on' : 'Music: off';
+    sendToStage();
+  });
+  // 5-second cue: cut the time left to 5 seconds (phones follow via updated_at).
   el('cueBtn').addEventListener('click', function () {
     if (STEPS[step].phase !== 'voting') return;
-    countdown = { id: countdown.id + 1, at: Date.now() };
+    var now = Date.now();
+    if (votingEndsAt - now <= 5000) return;
+    votingEndsAt = now + 5000;
+    sb.from('gg_state').update({ updated_at: new Date(votingEndsAt - VOTE_MS).toISOString() }).eq('id', 1).then(function () {});
     sendToStage();
   });
 
@@ -302,8 +357,10 @@
   }
 
   // ---- Live data from Supabase ----
+  var polling = false;
   async function poll() {
-    if (!sessionId) return;
+    if (!sessionId || polling) return;
+    polling = true;
     try {
       var t = await sb.from('gg_teams').select('id, name, joined_at').eq('session_id', sessionId).order('joined_at', { ascending: true });
       if (t.error) throw t.error;
@@ -313,6 +370,7 @@
       setStatus('live');
       renderLive();
     } catch (e) { setStatus('down'); }
+    polling = false;
   }
 
   // ---- Sessions ----
@@ -349,6 +407,7 @@
     sessionId = res.data.session_id;
     step = Math.min(Math.max(res.data.step || 0, 0), STEPS.length - 1);
     el('sessionText').textContent = sessionId;
+    if (STEPS[step].phase === 'voting') votingEndsAt = Date.now() + VOTE_MS; // control panel reloaded mid-vote
     render(); poll();
     setInterval(poll, 2000);
   })();
